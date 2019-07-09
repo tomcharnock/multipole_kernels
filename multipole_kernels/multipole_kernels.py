@@ -52,7 +52,7 @@ class multipole_kernels():
     weight_index -- nd_array (num_indices,) -- indices to gather weights at
     """
     def __init__(self, kernel_size=[3, 3], ℓ=[0, 1], input_filters=1,
-                 output_filters=None, placeholder=None, keras=None):
+                 output_filters=None, keras=None):
         """ Builds kernels with weights shared according to symmetries
 
         Calls to:
@@ -65,7 +65,6 @@ class multipole_kernels():
         ℓ -- list -- multipole values to create kernels (default [0, 1])
         input_filters -- int -- number of input filters (default 1)
         output_filters -- list -- number of output filters per multipole
-        placeholder -- str -- kernel tensor name, Variable used if not provided
         keras -- list -- if using keras this initialises the weights and biases
 
         Parameters:
@@ -104,7 +103,7 @@ class multipole_kernels():
         self.num_output_filters = indices[-1, -1].astype(np.int) + 1
         if not keras:
             self.w, self.b, indices_t, weight_index_t, shape = \
-                self.get_weights(indices, weight_index, placeholder)
+                self.get_weights(indices, weight_index)
             self.kernel = self.build_kernel(indices_t,
                                             weight_index_t,
                                             shape,
@@ -113,8 +112,8 @@ class multipole_kernels():
             self.indices = indices
             self.weight_index = weight_index
 
-    def get_weights(self, indices, weight_index, placeholder):
-        """ Gets TensorFlow variables (placeholders) for weights and indices
+    def get_weights(self, indices, weight_index):
+        """ Gets TensorFlow variables for weights and indices
 
         We create a TensorFlow variable (or placeholder) with as many
         parameters as there are independent weights in the kernels. We also
@@ -124,29 +123,35 @@ class multipole_kernels():
         __init__() -- finds indices and places weights in kernel
 
         Arguments:
-        placeholder -- str -- kernel tensor name, Variable used if not provided
+        indices -- ndarray (num_indices, dimension+2) -- weight kernel indices
+        weight_index -- nd_array (num_indices,) -- indices to gather weights at
 
         Returns:
-        w -- tensor -- independent variables/placeholder for kernel
-        b -- tensor -- independent variables/placeholder for biases
+        input_w -- tensor -- placeholder for kernel values
+        input_b -- tensor -- placeholder for bias values
+        w -- tensor -- independent variables for kernel
+        b -- tensor -- independent variables for biases
+        assign_w -- operation -- set variable kernel values
+        assign_b -- operation -- set variable bias values
         indices_t -- tensor -- weight kernel indices as a tensor
         weight_index_t -- tensor -- indices to gather weights as a tensor
         shape - tensor - shape of the convolutional kernel
         """
-        if placeholder is None:
-            w = tf.Variable(np.random.normal(0, 1, self.num_params),
-                            dtype=tf.float32,
-                            name="weights")
-            b = tf.Variable(np.zeros(self.num_output_filters),
-                            dtype=tf.float32,
-                            name="biases")
-        else:
-            w = tf.placeholder(dtype=tf.float32,
-                               shape=(self.num_params),
-                               name=placeholder+"/weights")
-            b = tf.placeholder(dtype=tf.float32,
-                               shape=(self.num_output_filters),
-                               name=placeholder+"/biases")
+        input_w = tf.placeholder(dtype=tf.float32,
+                                 shape=(self.num_params),
+                                 name="input_weights")
+        input_b = tf.placeholder(dtype=tf.float32,
+                                 shape=(self.num_output_filters),
+                                 name="input_biases")
+        w = tf.Variable(np.zeros(self.num_params),
+                        dtype=tf.float32,
+                        name="weights")
+        b = tf.Variable(np.zeros(self.num_output_filters),
+                        dtype=tf.float32,
+                        name="biases")
+        assign_w = tf.assign(w, input_w, name="assign_weights")
+        assign_b = tf.assign(b, input_b, name="assign_biases")
+
         indices_t = tf.Variable(indices,
                                 dtype=tf.int32,
                                 trainable=False)
