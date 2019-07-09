@@ -154,14 +154,17 @@ class multipole_kernels():
 
         indices_t = tf.Variable(indices,
                                 dtype=tf.int32,
-                                trainable=False)
+                                trainable=False,
+                                name="indices")
         weight_index_t = tf.Variable(weight_index,
                                      dtype=tf.int32,
-                                     trainable=False)
+                                     trainable=False,
+                                     name="weight_index")
         shape = tf.Variable(self.kernel_size + [self.num_input_filters,
                                                 self.num_output_filters],
                             dtype=tf.int32,
-                            trainable=False)
+                            trainable=False,
+                            name="shape")
         return w, b, indices_t, weight_index_t, shape
 
     def build_kernel(self, indices, weight_index, shape, w):
