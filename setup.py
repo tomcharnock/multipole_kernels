@@ -22,7 +22,7 @@ setuptools.setup(
     ],
     python_requires=">=3.6",
     install_requires=[
-          #"tensorflow>=2.0.0",
+          "tensorflow>=2.0.0",
           "tqdm>=4.29.0",
           "numpy>=1.16.0",
           "scipy>=1.2.0"
