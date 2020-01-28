@@ -25,7 +25,7 @@ is most informative about the data.
 """
 
 
-__version__ = '0.1a'
+__version__ = '0.2a'
 __author__ = "Tom Charnock"
 
 import numpy as np
@@ -47,9 +47,9 @@ class multipole_kernels():
     num_output_filters -- int -- total number of output filters (for biases)
     w -- tensor -- set of independent variables/placeholder for kernel
     b -- tensor -- set of independent variables/placeholder for biases
-    kernel -- tensor -- multipole kernels with filters as different multipoles
-    indices -- ndarray (num_indices, dimension+2) -- weight kernel indices
-    weight_index -- nd_array (num_indices,) -- indices to gather weights at
+    indices -- tensor (num_indices, dimension+2) -- weight kernel indices
+    weight_index -- tensor (num_indices,) -- indices to gather weights at
+    shape -- tensor -- (dimension+2,) -- shape of the kernel
     """
     def __init__(self, kernel_size=[3, 3], ℓ=[0, 1], input_filters=1,
                  output_filters=None, keras=None):
@@ -77,12 +77,6 @@ class multipole_kernels():
         weight_index -- nd_array (num_indices,) -- indices to gather weights at
         num_params -- int -- number of independent weights for kernel
         num_output_filters -- int -- total number of output filters for biases
-        w -- tensor -- independent variables/placeholder for kernel
-        b -- tensor -- independent variables/placeholder for biases
-        indices_t -- tensor -- weight kernel indices as a tensor
-        weight_index_t -- tensor -- indices to gather weights as a tensor
-        shape -- tensor -- shape of the convolutional kernel
-        kernel -- tensor -- kernels with filters as different multipoles
         """
         self.kernel_size = kernel_size
         self.dimension = len(kernel_size)
@@ -101,18 +95,9 @@ class multipole_kernels():
         indices, weight_index = self.get_indices()
         self.num_params = weight_index[-1].astype(np.int) + 1
         self.num_output_filters = indices[-1, -1].astype(np.int) + 1
-        if not keras:
-            self.w, self.b, indices_t, weight_index_t, shape = \
-                self.get_weights(indices, weight_index)
-            self.kernel = self.build_kernel(indices_t,
-                                            weight_index_t,
-                                            shape,
-                                            self.w)
-        else:
-            self.indices = indices
-            self.weight_index = weight_index
+        self.get_weights(indices, weight_index, keras)
 
-    def get_weights(self, indices, weight_index):
+    def get_weights(self, indices, weight_index, keras):
         """ Gets TensorFlow variables for weights and indices
 
         We create a TensorFlow variable (or placeholder) with as many
@@ -125,47 +110,32 @@ class multipole_kernels():
         Arguments:
         indices -- ndarray (num_indices, dimension+2) -- weight kernel indices
         weight_index -- nd_array (num_indices,) -- indices to gather weights at
+        keras -- bool -- if False variables are created for weight and bias
 
-        Returns:
-        input_w -- tensor -- placeholder for kernel values
-        input_b -- tensor -- placeholder for bias values
+        Parameters:
         w -- tensor -- independent variables for kernel
         b -- tensor -- independent variables for biases
-        assign_w -- operation -- set variable kernel values
-        assign_b -- operation -- set variable bias values
-        indices_t -- tensor -- weight kernel indices as a tensor
-        weight_index_t -- tensor -- indices to gather weights as a tensor
+        indices -- tensor -- weight kernel indices as a tensor
+        weight_index -- tensor -- indices to gather weights as a tensor
         shape - tensor - shape of the convolutional kernel
         """
-        input_w = tf.placeholder(dtype=tf.float32,
-                                 shape=(self.num_params),
-                                 name="input_weights")
-        input_b = tf.placeholder(dtype=tf.float32,
-                                 shape=(self.num_output_filters),
-                                 name="input_biases")
-        w = tf.Variable(np.zeros(self.num_params),
-                        dtype=tf.float32,
-                        name="weights")
-        b = tf.Variable(np.zeros(self.num_output_filters),
-                        dtype=tf.float32,
-                        name="biases")
-        assign_w = tf.assign(w, input_w, name="assign_weights")
-        assign_b = tf.assign(b, input_b, name="assign_biases")
-
-        indices_t = tf.Variable(indices,
-                                dtype=tf.int32,
-                                trainable=False,
-                                name="indices")
-        weight_index_t = tf.Variable(weight_index,
-                                     dtype=tf.int32,
-                                     trainable=False,
-                                     name="weight_index")
-        shape = tf.Variable(self.kernel_size + [self.num_input_filters,
+        if not keras:
+            self.w = tf.Variable(np.random.normal(0, 1, (self.num_params,)),
+                                 dtype=tf.float32,
+                                 name="weights")
+            self.b = tf.Variable(np.random.normal(0, 1, (self.num_output_filters,)),
+                                 dtype=tf.float32,
+                                 name="biases")
+        self.indices = tf.constant(indices,
+                                   dtype=tf.int32,
+                                   name="indices")
+        self.weight_index = tf.constant(weight_index,
+                                        dtype=tf.int32,
+                                        name="weight_index")
+        self.shape = tf.constant(self.kernel_size + [self.num_input_filters,
                                                 self.num_output_filters],
-                            dtype=tf.int32,
-                            trainable=False,
-                            name="shape")
-        return w, b, indices_t, weight_index_t, shape
+                                 dtype=tf.int32,
+                                 name="shape")
 
     def build_kernel(self, indices, weight_index, shape, w):
         """ Puts same weights at the correct indices in kernel tensor
@@ -197,7 +167,15 @@ class multipole_kernels():
         kernel.set_shape(self.kernel_size + [self.num_input_filters,
                                              self.num_output_filters])
         return kernel
-
+    
+    def get_kernel(self):
+        """ Returns the current state of the weights scattered into the kernel
+        """
+        return self.build_kernel(self.indices,
+                                 self.weight_index,
+                                 self.shape,
+                                 self.w)
+    
     def get_indices(self):
         """ Gets indices for equidistant/independent points in kernel
 
@@ -373,3 +351,29 @@ class multipole_kernels():
                       1)
                 for dim in range(self.dimension))]
         return distance, np.sqrt(np.sum(distance**2., 0))
+    
+    def multipole_convolution(self, x, padding="VALID", strides=None, **kwargs):
+        """ Perform the convolution for use in TF2
+        
+        Since the convolution must be performed in the gradient tape then this
+        function constructs the kernel and performs the convolution, returning the
+        result.
+        
+        Arguments:
+        x -- tensor -- input tensor to be convolved
+        padding -- str -- option for how the convolution should be performed
+        strides -- list of int -- strides in each direction of the convolution
+        
+        Returns:
+        tensor -- the convolved tensor output
+        """
+        if strides is None:
+            strides = [1 for i in range(self.dimension+2)]
+        kernel = self.get_kernel()
+        return tf.add(tf.nn.convolution(x,
+                                        kernel,
+                                        strides=strides,
+                                        padding=padding),
+                      self.b,
+                      name="multipole_convolution")
+        

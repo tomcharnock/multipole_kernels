@@ -28,7 +28,7 @@ custom layer which can be imported into sequential models, etc.
 """
 
 
-__version__ = '0.1a'
+__version__ = '0.2a'
 __author__ = "Tom Charnock"
 
 import numpy as np
@@ -58,7 +58,7 @@ class MultipoleKernel(Layer):
     padding -- str -- type of padding to use for the convolution
     """
     def __init__(self, kernel_size=[3, 3], ℓ=[0, 1], input_filters=1,
-                 output_filters=None, padding="VALID", **kwargs):
+                 output_filters=None, padding="VALID", strides=None, **kwargs):
         """ Initialises multipole_kernels and inherits all of its attributes
 
         Keyword arguments:
@@ -81,20 +81,14 @@ class MultipoleKernel(Layer):
             setattr(MultipoleKernel, v, vars(mk)[v])
         self.build_kernel = mk.build_kernel
         self.padding = padding
+        if strides is None:
+            self.strides = [1 for i in range(len(kernel_size)+2)]
+        else:
+            self.strides = strides
         super(MultipoleKernel, self).__init__(**kwargs)
 
     def build(self, input_shape):
         """ Make keras variables of weights and TensorFlow constants of indices
-
-        Using the indices calculated in multipole_kernels() we can get keras
-        weights from which we can construct the radial (multipole expansion)
-        kernels. These weights are first combined into a tensor whoes dimension
-        is the same as the number of indices. These are then scattered into the
-        convolutional kernel. Here we also get the biases kernels, one
-        parameter for each output filter.
-
-        Calls:
-        get_constants() -- makes constant tensors from the indices
 
         Arguments:
         input_shape -- tuple -- the shape of the input to pass to the class
@@ -105,7 +99,6 @@ class MultipoleKernel(Layer):
         indices -- tensor -- weight kernel indices as a tensor
         weight_index -- tensor -- indices to gather weights as a tensor
         shape - tensor - shape of the convolutional kernel
-        kernel -- tensor -- multipole kernels
         """
         self.w = self.add_weight(
             name="weights",
@@ -117,48 +110,43 @@ class MultipoleKernel(Layer):
             shape=(self.num_output_filters,),
             initializer='constant',
             trainable=True)
-        indices, weight_index, shape = self.get_constants()
-        self.kernel = self.build_kernel(indices,
-                                        weight_index,
-                                        shape,
-                                        self.w)
         super(MultipoleKernel, self).build(input_shape)
-
-    def get_constants(self):
-        """ Makes constant tensors from the indices for constructing the kernel
-
-        Called by:
-        build() -- makes the keras variables and constructs the radial kernel
-
-        Returns:
-        indices -- tensor -- weight kernel indices for placing weights
-        weight_index -- tensor -- indices to gather weights for scattering
-        shape - tensor -- shape of the convolutional kernel
+        
+    def get_kernel(self):
+        """ Returns the current state of the weights scattered into the kernel
         """
-        indices = tf.constant(self.indices,
-                              dtype=tf.int32,
-                              name="indices")
-        weight_index = tf.constant(self.weight_index,
-                                   dtype=tf.int32,
-                                   name="weight_index")
-        shape = tf.constant(self.kernel_size + [self.num_input_filters,
-                                                self.num_output_filters],
-                            dtype=tf.int32,
-                            name="shape")
-        return indices, weight_index, shape
+        return self.build_kernel(self.indices,
+                                 self.weight_index,
+                                 self.shape,
+                                 self.w)
 
     def call(self, x):
         """ Performs a convolution using the kernel constructed by the class
 
+        Using the indices calculated in multipole_kernels() we can get keras
+        weights from which we can construct the radial (multipole expansion)
+        kernels. These weights are first combined into a tensor whoes dimension
+        is the same as the number of indices. These are then scattered into the
+        convolutional kernel. Here we also get the biases kernels, one
+        parameter for each output filter.
+
         Arguments:
         x -- tensor -- the input tensor to be convolved
+        
+        Parameters:
+        kernel -- tensor -- multipole kernels
 
         Returns
         tensor -- the convolved input with the radial kernel (plus biases)
         """
+        kernel = self.build_kernel(self.indices,
+                                   self.weight_index,
+                                   self.shape,
+                                   self.w)
         return tf.add(tf.nn.convolution(x,
-                                        self.kernel,
-                                        self.padding),
+                                        kernel,
+                                        strides=self.strides,
+                                        padding=self.padding),
                       self.b,
                       name="multipole_convolution")
 
