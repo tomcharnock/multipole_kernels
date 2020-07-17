@@ -1,9 +1,15 @@
-# Multipole Kernels
-TensorFlow convolutional kernels expanded in multipoles to reduce number of weights in kernels.
+# multipole_kernels
 
-Sorry there isn't a lot of content on this page - the documentation in the .py files is excellent though ;).
+Project moved to [bitbucket.org/tomcharnock/multipole_kernels/](https://bitbucket.org/tomcharnock/multipole_kernels/)
 
-# TODO
-- Write README.md fully
-- There is a slight over parameterisation of the kernels because I've not taken out the $\ell<\ell_\textrm{current}$ modes from $\ell_\textrm{current}$. It's not an issue, just not as clean as it could be.
-- 
+To continue working with this project please run
+
+```
+git remote set-url origin https://bitbucket.org/tomcharnock/multipole_kernels.git
+```
+or 
+```
+git remote set-url origin git@bitbucket.org:tomcharnock/multipole_kernels.git
+```
+
+Of course, change `origin` to the alias pointing to the github repository.
